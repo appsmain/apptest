@@ -10,6 +10,16 @@ const services = {
   nutrition: { name: "Consulta Nutricional", duration: "45 min", price: "$15.000" },
 }
 
+// --- Supabase Configuration ---
+// Reemplaza con tus propias claves de Supabase
+const SUPABASE_URL = "https://bppjabvmrzlptgjlobuy.supabase.co" // Tu Project URL
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwcGphYnZtcnpscHRnamxvYnV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3OTg4NjcsImV4cCI6MjA2ODM3NDg2N30.ggPZAysMmeBC6GeoxfCa6oP-1N9EkQeK65fLjDDSBpM" // Tu anon public key
+
+// Inicializa el cliente de Supabase
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+// --- End Supabase Configuration ---
+
 // Inicialización
 document.addEventListener("DOMContentLoaded", () => {
   initializeTheme()
@@ -76,26 +86,27 @@ async function handleBookingSubmit(e) {
   }
 
   const formData = {
-    id: Date.now().toString(),
+    // Supabase generará el ID automáticamente si la columna 'id' es UUID con default gen_random_uuid()
     service: services[selectedService].name,
     date: document.getElementById("date").value,
     time: document.getElementById("time").value,
-    clientName: document.getElementById("clientName").value,
-    clientPhone: document.getElementById("clientPhone").value,
+    client_name: document.getElementById("clientName").value, // Cambiado a client_name para Supabase
+    client_phone: document.getElementById("clientPhone").value, // Cambiado a client_phone para Supabase
     notes: document.getElementById("notes").value,
     status: "pending",
-    createdAt: new Date().toISOString(),
+    created_at: new Date().toISOString(), // Cambiado a created_at para Supabase
   }
 
-  // Guardar en localStorage
-  const bookings = JSON.parse(localStorage.getItem("bookings") || "[]")
-  bookings.push(formData)
-  localStorage.setItem("bookings", JSON.stringify(bookings))
+  // Guardar en Supabase
+  const { data, error } = await supabase.from("bookings").insert([formData]).select()
 
-  // NUEVO: También guardar en sessionStorage para compatibilidad entre pestañas
-  sessionStorage.setItem("newBooking", JSON.stringify(formData))
+  if (error) {
+    console.error("Error al guardar en Supabase:", error)
+    showToast("Error al reservar el turno. Intenta nuevamente.", "error")
+    return
+  }
 
-  // Simular envío de WhatsApp
+  // Simular envío de WhatsApp (puedes integrar con una API real de WhatsApp aquí)
   sendWhatsAppNotification(formData)
 
   showToast("¡Turno reservado! Te enviaremos una confirmación por WhatsApp", "success")
@@ -115,8 +126,8 @@ function resetForm() {
 function sendWhatsAppNotification(booking) {
   const message = `🌟 *Nuevo Turno Reservado* 🌟
 
-👤 *Cliente:* ${booking.clientName}
-📞 *Teléfono:* ${booking.clientPhone}
+👤 *Cliente:* ${booking.client_name}
+📞 *Teléfono:* ${booking.client_phone}
 💅 *Servicio:* ${booking.service}
 📅 *Fecha:* ${new Date(booking.date).toLocaleDateString("es-AR")}
 ⏰ *Hora:* ${booking.time}
