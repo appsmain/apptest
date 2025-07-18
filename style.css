@@ -204,7 +204,7 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2rem;
-  max-width: 1000px; /* Cambiar de 4rem a 1000px */
+  max-width: 1000px; /* Cambiado de 4rem a 1000px para centrado */
   margin: 0 auto;
 }
 
