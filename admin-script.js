@@ -3,14 +3,33 @@ let bookings = []
 let currentFilter = "all"
 let currentTheme = localStorage.getItem("theme") || "light"
 
+// --- Supabase Configuration ---
+// Reemplaza con tus propias claves de Supabase
+const SUPABASE_URL = "https://bppjabvmrzlptgjlobuy.supabase.co" // Tu Project URL
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwcGphYnZtcnpscHRnamxvYnV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3OTg4NjcsImV4cCI6MjA2ODM3NDg2N30.ggPZAysMmeBC6GeoxfCa6oP-1N9EkQeK65fLjDDSBpM" // Tu anon public key
+
+// Inicializa el cliente de Supabase
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+// --- End Supabase Configuration ---
+
 // Inicialización
 document.addEventListener("DOMContentLoaded", () => {
   checkAuthentication()
   initializeTheme()
-  loadBookings()
+  loadBookings() // Carga inicial de turnos
   initializeFilters()
   initializeLogout()
   updateStats()
+
+  // Suscribirse a cambios en la base de datos de Supabase para actualizaciones en tiempo real
+  supabase
+    .channel("public:bookings") // Nombre del canal, debe coincidir con tu tabla
+    .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, (payload) => {
+      console.log("Cambio recibido de Supabase:", payload)
+      loadBookings() // Recargar los turnos cuando haya un cambio en la base de datos
+    })
+    .subscribe()
 })
 
 // Autenticación
@@ -49,26 +68,17 @@ function updateThemeIcon() {
   icon.className = currentTheme === "dark" ? "fas fa-sun" : "fas fa-moon"
 }
 
-// Cargar turnos
-function loadBookings() {
-  // Verificar si hay una nueva reserva desde otra pestaña
-  const newBooking = sessionStorage.getItem("newBooking")
-  if (newBooking) {
-    const booking = JSON.parse(newBooking)
-    const existingBookings = JSON.parse(localStorage.getItem("bookings") || "[]")
+// Cargar turnos desde Supabase
+async function loadBookings() {
+  const { data, error } = await supabase.from("bookings").select("*").order("created_at", { ascending: false })
 
-    // Verificar si la reserva ya existe
-    const exists = existingBookings.some((b) => b.id === booking.id)
-    if (!exists) {
-      existingBookings.push(booking)
-      localStorage.setItem("bookings", JSON.stringify(existingBookings))
-    }
-
-    // Limpiar sessionStorage
-    sessionStorage.removeItem("newBooking")
+  if (error) {
+    console.error("Error al cargar turnos desde Supabase:", error)
+    showToast("Error al cargar los turnos.", "error")
+    return
   }
 
-  bookings = JSON.parse(localStorage.getItem("bookings") || "[]")
+  bookings = data
   renderBookings()
   updateStats()
 }
@@ -115,7 +125,7 @@ function renderBookings() {
       (booking) => `
         <div class="booking-card">
             <div class="booking-header">
-                <h3>${booking.clientName}</h3>
+                <h3>${booking.client_name}</h3> <!-- Usar client_name de Supabase -->
                 <span class="status-badge status-${booking.status}">
                     ${getStatusText(booking.status)}
                 </span>
@@ -128,7 +138,7 @@ function renderBookings() {
                     <div><i class="fas fa-clock"></i> ${booking.time}</div>
                 </div>
                 <div>
-                    <div><i class="fas fa-phone"></i> ${booking.clientPhone}</div>
+                    <div><i class="fas fa-phone"></i> ${booking.client_phone}</div> <!-- Usar client_phone de Supabase -->
                     ${booking.notes ? `<div style="margin-top: 0.5rem;"><strong>Notas:</strong> ${booking.notes}</div>` : ""}
                 </div>
             </div>
@@ -149,7 +159,7 @@ function renderBookings() {
                 <button class="btn-sm btn-danger" onclick="deleteBooking('${booking.id}')">
                     <i class="fas fa-trash"></i> Eliminar
                 </button>
-                <button class="btn-sm btn-outline" onclick="contactWhatsApp('${booking.clientPhone}', '${booking.clientName}')">
+                <button class="btn-sm btn-outline" onclick="contactWhatsApp('${booking.client_phone}', '${booking.client_name}')">
                     WhatsApp
                 </button>
             </div>
@@ -159,25 +169,33 @@ function renderBookings() {
     .join("")
 }
 
-// Acciones de turnos
-function updateBookingStatus(id, status) {
-  bookings = bookings.map((booking) => (booking.id === id ? { ...booking, status } : booking))
+// Acciones de turnos en Supabase
+async function updateBookingStatus(id, status) {
+  const { data, error } = await supabase.from("bookings").update({ status: status }).eq("id", id)
 
-  localStorage.setItem("bookings", JSON.stringify(bookings))
-  renderBookings()
-  updateStats()
+  if (error) {
+    console.error("Error al actualizar estado en Supabase:", error)
+    showToast("No se pudo actualizar el estado del turno", "error")
+    return
+  }
 
   const statusText = status === "confirmed" ? "confirmado" : "cancelado"
   showToast(`Turno ${statusText} exitosamente`, "success")
+  loadBookings() // Recargar para reflejar el cambio
 }
 
-function deleteBooking(id) {
+async function deleteBooking(id) {
   if (confirm("¿Estás seguro de que quieres eliminar este turno?")) {
-    bookings = bookings.filter((booking) => booking.id !== id)
-    localStorage.setItem("bookings", JSON.stringify(bookings))
-    renderBookings()
-    updateStats()
+    const { error } = await supabase.from("bookings").delete().eq("id", id)
+
+    if (error) {
+      console.error("Error al eliminar turno en Supabase:", error)
+      showToast("No se pudo eliminar el turno", "error")
+      return
+    }
+
     showToast("Turno eliminado exitosamente", "success")
+    loadBookings() // Recargar para reflejar el cambio
   }
 }
 
@@ -219,20 +237,3 @@ function showToast(message, type = "success") {
     toast.classList.remove("show")
   }, 3000)
 }
-
-// Agregar listener para cambios en localStorage
-window.addEventListener("storage", (e) => {
-  if (e.key === "bookings") {
-    loadBookings()
-  }
-})
-
-// Agregar función para refrescar datos cada 5 segundos
-setInterval(() => {
-  const currentBookingsCount = bookings.length
-  const storedBookings = JSON.parse(localStorage.getItem("bookings") || "[]")
-
-  if (storedBookings.length !== currentBookingsCount) {
-    loadBookings()
-  }
-}, 5000)
